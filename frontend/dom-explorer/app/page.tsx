@@ -1,65 +1,241 @@
-import Image from "next/image";
+"use client";
+import React, { useState } from "react";
 
 export default function Home() {
+  const [inputType, setInputType] = useState<"url" | "html">("url");
+  const [algorithm, setAlgorithm] = useState<"bfs" | "dfs">("bfs");
+  const [isAlgoDropdownOpen, setIsAlgoDropdownOpen] = useState(false);
+
+  // STATE PLACEHOLDER: Untuk menerima data JSON
+  const [metrics, setMetrics] = useState({
+    maxDepth: 0,
+    searchTime: 0,
+    visitedNodes: 0,
+  });
+  
+  const [traversalLog, setTraversalLog] = useState<{tag: string, level: number, status: string, time?: number}[]>([]);
+  const [treeNodes, setTreeNodes] = useState([]); // Array kosong untuk nodes pohon
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Simulasi tombol start ditekan
+  const handleStartTraversal = () => {
+    setIsProcessing(true);
+    // Nanti panggil fetch API ke backend
+    console.log("Menunggu respon dari backend...");
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="h-screen overflow-hidden flex flex-col font-body">
+      {/* TopNavBar */}
+      <div className="z-50 hidden md:flex justify-between items-center w-full px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/15 shadow-sm">
+        <div className="flex items-center gap-8">
+          <span className="text-2xl font-bold font-headline tracking-tighter text-on-surface">DOM Explorer</span>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className="flex gap-6 items-center">
+          <button className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2">
+            Export Tree {/* Nanti ini bakal dipasang event handler buat export data pohon ke bentuk apapun yang bisa (diimplement kalau librarynya ada) */}
+          </button>
         </div>
-      </main>
+      </div>
+
+      {/* Main Layout */}
+      <div className="flex w-full h-full flex-1 overflow-hidden">
+        {/* Left Sidebar (Control Panel) */}
+        <aside className="w-80 shrink-0 bg-surface-container-low h-full flex flex-col p-6 overflow-y-auto border-r border-outline-variant/15">
+
+          {/* Input Toggle */}
+          <div className="bg-surface-container  -high rounded-xl p-1 flex mb-6 relative">
+            <div 
+              onClick={() => setInputType("url")}
+              className={`w-1/2 text-center py-2 text-sm font-medium rounded-lg cursor-pointer transition-all ${inputType === "url" ? "bg-surface-container-lowest text-on-surface shadow-sm" : "text-on-surface-variant hover:text-on-surface"}`}>
+              URL
+            </div>
+            <div 
+              onClick={() => setInputType("html")}
+              className={`w-1/2 text-center py-2 text-sm font-medium rounded-lg cursor-pointer transition-all ${inputType === "html" ? "bg-surface-container-lowest text-on-surface shadow-sm" : "text-on-surface-variant hover:text-on-surface"}`}>
+              Raw HTML
+            </div>
+          </div>
+
+          {/* Target Input */}
+          <div className="mb-6">
+            <label className="block text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-2">Target</label>
+            {inputType === "url" ? (
+              <input 
+                className="w-full bg-surface-container-lowest border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary shadow-sm outline-1 outline-outline-variant/15 text-on-surface placeholder:text-outline transition-all" 
+                placeholder="https://example.com" 
+                type="text" 
+              />
+            ) : (
+              <div className="w-full h-40 bg-surface-container-lowest rounded-xl outline-1 outline-outline-variant/15 shadow-sm focus-within:ring-2 focus-within:ring-primary overflow-hidden transition-all flex">
+                <textarea 
+                  className="custom-scrollbar w-full h-full bg-transparent border-0 px-4 py-3 text-sm text-on-surface placeholder:text-outline resize-none focus:ring-0 font-mono" 
+                  placeholder={`<html>\n  <head>\n    <title>Example</title>\n  </head>\n  <body>\n    ...\n  </body>\n</html>`} 
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Algorithm Dropdown */}
+          <div className="mb-6">
+            <label className="block text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-2">Algorithm</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsAlgoDropdownOpen(!isAlgoDropdownOpen)}
+                className="w-full flex items-center justify-between bg-surface-container-lowest border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary shadow-sm  outline-1 outline-outline-variant/15 text-on-surface transition-all"
+              >
+                <span>{algorithm === "bfs" ? "Breadth-First Search (BFS)" : "Depth-First Search (DFS)"}</span>
+                <span className={`material-symbols-outlined text-outline transition-transform duration-200 ${isAlgoDropdownOpen ? "rotate-180" : ""}`}>
+                  expand_more
+                </span>
+              </button>
+              {isAlgoDropdownOpen && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-surface-container-lowest rounded-xl shadow-lg outline-1 outline-outline-variant/15 overflow-hidden z-50 py-1">
+                  <div
+                    onClick={() => {
+                      setAlgorithm("bfs");
+                      setIsAlgoDropdownOpen(false);
+                    }}
+                    className={`px-4 py-3 text-sm cursor-pointer transition-colors flex items-center justify-between ${algorithm === "bfs" ? "bg-primary-container/30 text-primary-dim font-medium" : "text-on-surface hover:bg-surface-container-high"}`}
+                  >
+                    Breadth-First Search (BFS)
+                    {algorithm === "bfs" && <span className="material-symbols-outlined text-[18px]">check</span>}
+                  </div>
+                  <div
+                    onClick={() => {
+                      setAlgorithm("dfs");
+                      setIsAlgoDropdownOpen(false);
+                    }}
+                    className={`px-4 py-3 text-sm cursor-pointer transition-colors flex items-center justify-between ${algorithm === "dfs" ? "bg-primary-container/30 text-primary-dim font-medium" : "text-on-surface hover:bg-surface-container-high"}`}
+                  >
+                    Depth-First Search (DFS)
+                    {algorithm === "dfs" && <span className="material-symbols-outlined text-[18px]">check</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* CSS Selector */}
+          <div className="mb-6">
+            <label className="block text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-2">CSS Selector (Optional)</label>
+            <input className="w-full bg-surface-container-lowest border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary shadow-sm outline-1 outline-outline-variant/15 text-on-surface placeholder:text-outline" placeholder="e.g., .nav-item, #main" type="text" />
+          </div>
+
+          {/* Result Limit */}
+          <div className="mb-8">
+            <label className="block text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-2">Result Limit</label>
+            <div className="flex gap-2">
+              <div className="flex-1 bg-surface-container-lowest rounded-xl flex items-center outline-1 outline-outline-variant/15 shadow-sm overflow-hidden focus-within:ring-2 focus-within:ring-primary">
+                <span className="pl-3 text-sm text-on-surface-variant">Top</span>
+                <input className="w-full bg-transparent border-0 px-2 py-3 text-sm focus:ring-0 text-on-surface text-center outline-none" type="number" defaultValue="50" />
+              </div>
+              <button className="px-4 py-3 bg-surface-container-high rounded-xl text-sm font-medium text-on-surface-variant hover:bg-surface-container-highest transition-colors">All</button>
+            </div>
+          </div>
+
+          {/* Start Button */} {/* ini masih placeholder, nanti bakal dipasang event handler buat mulai traversal dan fetch data ke backend */}
+          <div className="mt-auto">
+            <button 
+              onClick={handleStartTraversal}
+              className="w-full bg-primary text-on-primary py-4 rounded-xl font-semibold tracking-wide hover:opacity-90 transition-opacity flex justify-center items-center gap-2 shadow-[0_8px_16px_rgba(77,68,227,0.2)]">
+              <span className="material-symbols-outlined">play_arrow</span>
+              {isProcessing ? "Processing..." : "Start Traversal"}
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1 flex flex-col min-w-0 bg-surface">
+          {/* Top Metric Row */}
+          <div className="flex gap-4 p-6 bg-surface z-10 shrink-0">
+            {/* Metric 1 */}
+            <div className="flex-1 bg-surface-container-low rounded-xl p-4 flex flex-col justify-between group hover:bg-surface-container-high transition-colors">
+              <span className="text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-1">Max Depth</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-headline font-bold text-3xl tracking-tight text-on-surface">{metrics.maxDepth}</span>
+                <span className="text-sm text-outline">levels</span>
+              </div>
+            </div>
+            {/* Metric 2 */}
+            <div className="flex-1 bg-surface-container-low rounded-xl p-4 flex flex-col justify-between group hover:bg-surface-container-high transition-colors">
+              <span className="text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-1">Search Time</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-headline font-bold text-3xl tracking-tight text-on-surface">{metrics.searchTime}</span>
+                <span className="text-sm text-outline">ms</span>
+              </div>
+            </div>
+            {/* Metric 3 */}
+            <div className="flex-1 bg-surface-container-low rounded-xl p-4 flex flex-col justify-between group hover:bg-surface-container-high transition-colors">
+              <span className="text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-1">Visited Nodes</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-headline font-bold text-3xl tracking-tight text-on-surface">{metrics.visitedNodes}</span>
+                <span className="text-sm text-outline">nodes</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Visualization Canvas */}
+          <div className="flex-1 relative overflow-hidden mx-6 mb-6 rounded-2xl outline-1 outline-outline-variant/15 bg-grid-dots shadow-sm">
+            <div className="absolute top-4 right-4 bg-surface/80 backdrop-blur-xl p-1 rounded-xl shadow-sm outline-1 outline-outline-variant/15 flex gap-1 z-20">
+              <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container-highest transition-colors text-on-surface-variant">
+                <span className="material-symbols-outlined text-[20px]">zoom_in</span>
+              </button>
+              <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container-highest transition-colors text-on-surface-variant">
+                <span className="material-symbols-outlined text-[20px]">zoom_out</span>
+              </button>
+            </div>
+
+            {/* Area Kosong untuk Placeholder Tree */} {/* Nanti ini bakal jadi area untuk visualisasi pohon DOM, sementara masih pake placeholder dan blom ada library visualisasinya*/}
+            <div className="absolute inset-0 flex items-center justify-center overflow-auto text-on-surface-variant opacity-50">
+              {treeNodes.length === 0 ? (
+                <div className="text-sm flex flex-col items-center gap-2">
+                  <span className="material-symbols-outlined text-4xl">account_tree</span>
+                  <p>Menunggu eksekusi algoritma...</p>
+                </div>
+              ) : (
+                <div>{/* Komponen Visualisasi Pohon Render di Sini Nanti */}</div>
+              )}
+            </div>
+          </div>
+        </main>
+
+        {/* Right Side Panel: Log / Details */}
+        <aside className="w-72 shrink-0 bg-surface h-full flex flex-col border-l border-outline-variant/15">
+          <div className="p-6 pb-2 border-b border-outline-variant/15 flex items-center justify-between bg-surface z-10">
+            <h3 className="font-headline font-semibold text-lg text-on-surface">Traversal Log</h3>
+            <span className="bg-surface-container-highest text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded text-on-surface-variant">Live</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide bg-surface">
+            {/* Placeholder Log List */} {/* Nanti ini bakal diisi sama log aktivitas traversal yang dikirim dari backend real-time, sementara masih pake data statis buat simulasi */}
+            {traversalLog.length === 0 ? (
+              <div className="text-xs text-on-surface-variant text-center mt-10">Belum ada aktivitas.</div>
+            ) : (
+              traversalLog.map((log, index) => (
+                <div key={index} className="bg-surface-container-low rounded-lg p-3 flex items-start gap-3">
+                  <span className="material-symbols-outlined text-outline text-[18px] mt-0.5">check_circle</span>
+                  <div>
+                    <div className="text-sm font-medium text-on-surface flex items-center gap-2">
+                      <span className="font-mono text-xs bg-surface-container-lowest px-1.5 py-0.5 rounded outline-1 outline-outline-variant/15">{log.tag}</span>
+                    </div>
+                    <p className="text-xs text-on-surface-variant mt-1">{log.status}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Node Details Placeholder */} {/* Ini gatau bakal diimplement atau engga, gimana nanti soalnya terlihat ribet tapi keren*/}
+          <div className="h-48 border-t border-outline-variant/15 bg-surface-container-low p-4 flex flex-col">
+            <h4 className="text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-3">Node Details</h4>
+            <div className="bg-surface-container-lowest rounded-xl p-3  outline-1 outline-outline-variant/15 flex-1 overflow-auto text-xs font-mono text-on-surface leading-relaxed text-opacity-50 flex items-center justify-center">
+              Pilih node untuk melihat detail
+            </div>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
