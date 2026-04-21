@@ -28,12 +28,12 @@ func ParseHTML(htmlStr string) (*model.DOMNode, int, int, error) {
 	return root, nodeCount, maxDepth, nil
 }
 
-func buildTree(n *html.Node, parentID *string, depth int, nodeCount *int, maxDepth *int) *model.DOMNode {
+func buildTree(n *html.Node, parent *model.DOMNode, depth int, nodeCount *int, maxDepth *int) *model.DOMNode {
 
 	// skip non-element
 	if n.Type != html.ElementNode {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			res := buildTree(c, parentID, depth, nodeCount, maxDepth)
+			res := buildTree(c, parent, depth, nodeCount, maxDepth)
 			if res != nil {
 				return res
 			}
@@ -53,9 +53,9 @@ func buildTree(n *html.Node, parentID *string, depth int, nodeCount *int, maxDep
 		ID:         id,
 		Tag:        n.Data,
 		Attributes: map[string]string{},
-		Children:   []model.DOMNode{},
+		Children:   []*model.DOMNode{},
 		Depth:      depth,
-		ParentID:   parentID,
+		Parent:     parent,
 	}
 
 	// attributes
@@ -65,9 +65,9 @@ func buildTree(n *html.Node, parentID *string, depth int, nodeCount *int, maxDep
 
 	// children
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		child := buildTree(c, &id, depth+1, nodeCount, maxDepth)
+		child := buildTree(c, node, depth+1, nodeCount, maxDepth)
 		if child != nil {
-			node.Children = append(node.Children, *child)
+			node.Children = append(node.Children, child)
 		}
 	}
 

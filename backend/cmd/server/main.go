@@ -7,6 +7,6 @@ import (
 
 func main() {
 	r := gin.Default()
-	r.POST("/api/scrape", handler.HandleScrape)
+	r.POST("/api/search", handler.HandleSearch)
 	r.Run(":8080")
 }
