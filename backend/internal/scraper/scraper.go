@@ -4,12 +4,18 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
 func FetchHTML(url string) (string, error) {
+	url = strings.TrimSpace(url)
 	if url == "" {
 		return "", errors.New("empty url")
+	}
+
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "http://" + url
 	}
 
 	client := &http.Client{

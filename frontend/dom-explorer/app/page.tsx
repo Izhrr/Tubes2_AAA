@@ -1,10 +1,45 @@
 "use client";
 import React, { useState } from "react";
+import dynamic from 'next/dynamic';
+
+const Tree = dynamic(() => import('react-d3-tree'), { ssr: false });
+
+const transformTreeData = (node: any): any => {
+  if (!node) return null;
+  
+  const attrs: Record<string, string> = {};
+  if (node.attributes?.id) attrs.id = node.attributes.id;
+  if (node.attributes?.class) attrs.class = node.attributes.class;
+  
+  return {
+    name: node.tag || "unknown",
+    attributes: attrs,
+    children: node.children ? node.children.map(transformTreeData) : [],
+  };
+};
+
+const renderCustomNodeElement = ({ nodeDatum, toggleNode }: any) => (
+  <g>
+    <circle r="15" fill="#4D44E3" onClick={toggleNode} style={{ cursor: "pointer" }} />
+    <text fill="#e2e2e9" strokeWidth="1" x="20" dy="5" fontSize="14" style={{ userSelect: 'none' }}>
+      {nodeDatum.name}
+    </text>
+    {nodeDatum.attributes?.id && (
+      <text fill="#8E8E93" x="20" dy="20" fontSize="10" style={{ userSelect: 'none' }}>
+        #{nodeDatum.attributes.id}
+      </text>
+    )}
+  </g>
+);
 
 export default function Home() {
   const [inputType, setInputType] = useState<"url" | "html">("url");
   const [algorithm, setAlgorithm] = useState<"bfs" | "dfs">("bfs");
   const [isAlgoDropdownOpen, setIsAlgoDropdownOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [html, setHtml] = useState("");
+  const [cssSelector, setCssSelector] = useState("");
+  const [maxResults, setMaxResults] = useState(50);
 
   // STATE PLACEHOLDER: Untuk menerima data JSON
   const [metrics, setMetrics] = useState({
@@ -18,10 +53,62 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Simulasi tombol start ditekan
-  const handleStartTraversal = () => {
+  const handleStartTraversal = async () => {
+    if (inputType === "url" && !url.trim()) {
+      alert("Please enter a URL");
+      return;
+    }
+    if (inputType === "html" && !html.trim()) {
+      alert("Please enter Raw HTML");
+      return;
+    }
+
     setIsProcessing(true);
-    // Nanti panggil fetch API ke backend
-    console.log("Menunggu respon dari backend...");
+    setTraversalLog([]);
+    setTreeNodes([]);
+    setMetrics({ maxDepth: 0, searchTime: 0, visitedNodes: 0 });
+
+    try {
+      const response = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: inputType === "url" ? url.trim() : "",
+          html: inputType === "html" ? html : "",
+          algorithm,
+          cssSelector,
+          maxResults,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        alert(`Error: ${data.error || "Unknown error"}`);
+        return;
+      }
+      
+      setMetrics({
+        maxDepth: data.maxDepth || 0,
+        searchTime: data.executionMs || 0,
+        visitedNodes: data.nodesVisited || 0,
+      });
+      
+      if (data.traversalLog) {
+        setTraversalLog(data.traversalLog.map((log: any) => ({
+          tag: log.tag || log.nodeId || "unknown",
+          level: 0,
+          status: log.matched ? "Matched" : "Visited",
+        })));
+      }
+      
+      if (data.domTree) {
+        setTreeNodes([data.domTree as never]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch:", error);
+      alert("Failed to reach server");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -65,12 +152,16 @@ export default function Home() {
                 className="w-full bg-surface-container-lowest border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary shadow-sm outline-1 outline-outline-variant/15 text-on-surface placeholder:text-outline transition-all" 
                 placeholder="https://example.com" 
                 type="text" 
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
               />
             ) : (
               <div className="w-full h-40 bg-surface-container-lowest rounded-xl outline-1 outline-outline-variant/15 shadow-sm focus-within:ring-2 focus-within:ring-primary overflow-hidden transition-all flex">
                 <textarea 
                   className="custom-scrollbar w-full h-full bg-transparent border-0 px-4 py-3 text-sm text-on-surface placeholder:text-outline resize-none focus:ring-0 font-mono" 
                   placeholder={`<html>\n  <head>\n    <title>Example</title>\n  </head>\n  <body>\n    ...\n  </body>\n</html>`} 
+                  value={html}
+                  onChange={(e) => setHtml(e.target.value)}
                 />
               </div>
             )}
@@ -120,7 +211,13 @@ export default function Home() {
           {/* CSS Selector */}
           <div className="mb-6">
             <label className="block text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-2">CSS Selector (Optional)</label>
-            <input className="w-full bg-surface-container-lowest border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary shadow-sm outline-1 outline-outline-variant/15 text-on-surface placeholder:text-outline" placeholder="e.g., .nav-item, #main" type="text" />
+            <input 
+              className="w-full bg-surface-container-lowest border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary shadow-sm outline-1 outline-outline-variant/15 text-on-surface placeholder:text-outline" 
+              placeholder="e.g., .nav-item, #main" 
+              type="text" 
+              value={cssSelector}
+              onChange={(e) => setCssSelector(e.target.value)}
+            />
           </div>
 
           {/* Result Limit */}
@@ -129,9 +226,18 @@ export default function Home() {
             <div className="flex gap-2">
               <div className="flex-1 bg-surface-container-lowest rounded-xl flex items-center outline-1 outline-outline-variant/15 shadow-sm overflow-hidden focus-within:ring-2 focus-within:ring-primary">
                 <span className="pl-3 text-sm text-on-surface-variant">Top</span>
-                <input className="w-full bg-transparent border-0 px-2 py-3 text-sm focus:ring-0 text-on-surface text-center outline-none" type="number" defaultValue="50" />
+                <input 
+                  className="w-full bg-transparent border-0 px-2 py-3 text-sm focus:ring-0 text-on-surface text-center outline-none" 
+                  type="number" 
+                  value={maxResults}
+                  onChange={(e) => setMaxResults(Number(e.target.value))}
+                />
               </div>
-              <button className="px-4 py-3 bg-surface-container-high rounded-xl text-sm font-medium text-on-surface-variant hover:bg-surface-container-highest transition-colors">All</button>
+              <button 
+                onClick={() => setMaxResults(0)}
+                className="px-4 py-3 bg-surface-container-high rounded-xl text-sm font-medium text-on-surface-variant hover:bg-surface-container-highest transition-colors">
+                All
+              </button>
             </div>
           </div>
 
@@ -188,14 +294,23 @@ export default function Home() {
             </div>
 
             {/* Area Kosong untuk Placeholder Tree */} {/* Nanti ini bakal jadi area untuk visualisasi pohon DOM, sementara masih pake placeholder dan blom ada library visualisasinya*/}
-            <div className="absolute inset-0 flex items-center justify-center overflow-auto text-on-surface-variant opacity-50">
+            <div className={`absolute inset-0 ${treeNodes.length === 0 ? "flex items-center justify-center overflow-auto text-on-surface-variant opacity-50" : ""}`}>
               {treeNodes.length === 0 ? (
                 <div className="text-sm flex flex-col items-center gap-2">
                   <span className="material-symbols-outlined text-4xl">account_tree</span>
                   <p>Menunggu eksekusi algoritma...</p>
                 </div>
               ) : (
-                <div>{/* Komponen Visualisasi Pohon Render di Sini Nanti */}</div>
+                <div className="w-full h-full">
+                  <Tree 
+                    data={transformTreeData(treeNodes[0])} 
+                    orientation="vertical"
+                    pathFunc="step"
+                    translate={{ x: 300, y: 50 }}
+                    nodeSize={{ x: 150, y: 80 }}
+                    renderCustomNodeElement={renderCustomNodeElement}
+                  />
+                </div>
               )}
             </div>
           </div>
