@@ -53,7 +53,7 @@ func ProcessSearch(req model.SearchRequest) (model.SearchResponse, error) {
 		DOMTree:      tree,
 		NodeCount:    count,
 		MaxDepth:     depth,
-		ExecutionMs:  duration.Milliseconds(),
+		ExecutionMs:  float64(duration) / float64(time.Millisecond),
 		NodesVisited: visited,
 		Results:      results,
 		TraversalLog: log,

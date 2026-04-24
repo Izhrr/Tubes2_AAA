@@ -36,7 +36,7 @@ type SearchResponse struct {
 	DOMTree      *DOMNode        `json:"domTree"`
 	NodeCount    int             `json:"nodeCount"`
 	MaxDepth     int             `json:"maxDepth"`
-	ExecutionMs  int64           `json:"executionMs"`
+	ExecutionMs  float64           `json:"executionMs"`
 	NodesVisited int             `json:"nodesVisited"`
 	Results      []*DOMNode      `json:"results"`
 	TraversalLog []TraversalStep `json:"traversalLog"`
