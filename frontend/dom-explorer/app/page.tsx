@@ -127,18 +127,25 @@ export default function Home() {
   const [apiResponse, setApiResponse] = useState<any>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [isAnimEnabled, setIsAnimEnabled] = useState(true);
+  const [animSpeed, setAnimSpeed] = useState(500);
 
   React.useEffect(() => {
-  if (!apiResponse?.traversalLog) return;
-  
-  if (currentStep < apiResponse.traversalLog.length) {
-    const timer = setTimeout(() => {
-      setCurrentStep((prev) => prev + 1);
-    }, 500); 
-    
-    return () => clearTimeout(timer);
-  }
-}, [apiResponse, currentStep]);
+    if (!apiResponse?.traversalLog) return;
+
+    if (!isAnimEnabled) {
+      setCurrentStep(apiResponse.traversalLog.length);
+      return;
+    }
+
+    if (currentStep < apiResponse.traversalLog.length) {
+      const timer = setTimeout(() => {
+        setCurrentStep((prev) => prev + 1);
+      }, animSpeed); 
+      
+      return () => clearTimeout(timer);
+    }
+  }, [apiResponse, currentStep, isAnimEnabled, animSpeed]);
 
   const traversedIds = useMemo(() => {
     if (!apiResponse?.traversalLog) return new Set<string>();
@@ -329,6 +336,41 @@ export default function Home() {
               value={cssSelector}
               onChange={(e) => setCssSelector(e.target.value)}
             />
+          </div>
+          {/* Animation Settings */}
+          <div className="mb-6">
+            <label className="block text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-2">Animation</label>
+            <div className="flex items-center justify-between bg-surface-container-lowest rounded-xl px-4 py-3 outline-1 outline-outline-variant/15 shadow-sm">
+              <span className="text-sm text-on-surface">Enable Animation</span>
+              
+              {/* Toggle Switch */}
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer" 
+                  checked={isAnimEnabled} 
+                  onChange={(e) => setIsAnimEnabled(e.target.checked)} 
+                />
+                <div className="w-9 h-5 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border-surface-container-high after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+
+            {/* Slider Speed*/}
+            {isAnimEnabled && (
+              <div className="mt-3 flex items-center gap-3 px-1">
+                <span className="text-[10px] uppercase font-bold text-outline">Slow</span>
+                <input 
+                  type="range" 
+                  min="50" 
+                  max="1000" 
+                  step="50" 
+                  value={1050 - animSpeed}
+                  onChange={(e) => setAnimSpeed(1050 - Number(e.target.value))} 
+                  className="w-full h-1.5 bg-surface-container-high rounded-lg appearance-none cursor-pointer accent-primary" 
+                />
+                <span className="text-[10px] uppercase font-bold text-outline">Fast</span>
+              </div>
+            )}
           </div>
 
           {/* Result Limit */}
