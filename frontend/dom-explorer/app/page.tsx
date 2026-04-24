@@ -1,36 +1,117 @@
 "use client";
-import React, { useState } from "react";
-import dynamic from 'next/dynamic';
+import React, { useState, useMemo, useCallback } from "react";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Controls,
+  Background,
+  BackgroundVariant,
+  Handle,
+  Position,
+  type Node,
+  type Edge,
+  type NodeProps,
+  type NodeMouseHandler,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
-const Tree = dynamic(() => import('react-d3-tree'), { ssr: false });
+const NODE_W = 130;
+const NODE_H = 46;
+const H_GAP = 20;
+const V_GAP = 60;
 
-const transformTreeData = (node: any): any => {
-  if (!node) return null;
-  
-  const attrs: Record<string, string> = {};
-  if (node.attributes?.id) attrs.id = node.attributes.id;
-  if (node.attributes?.class) attrs.class = node.attributes.class;
-  
-  return {
-    name: node.tag || "unknown",
-    attributes: attrs,
-    children: node.children ? node.children.map(transformTreeData) : [],
-  };
+function subtreeWidth(node: any): number {
+  if (!node.children || node.children.length === 0) return NODE_W;
+  const total = node.children.reduce((s: number, c: any) => s + subtreeWidth(c) + H_GAP, -H_GAP);
+  return Math.max(NODE_W, total);
+}
+
+function placeNodes(node: any, x: number, y: number, positions: Map<string, {x: number; y: number}>) {
+  const sw = subtreeWidth(node);
+  positions.set(node.id, { x: x + sw / 2 - NODE_W / 2, y });
+  if (!node.children) return;
+  let cx = x;
+  for (const child of node.children) {
+    const cw = subtreeWidth(child);
+    placeNodes(child, cx, y + NODE_H + V_GAP, positions);
+    cx += cw + H_GAP;
+  }
+}
+
+function buildRFGraph(
+  root: any,
+  traversedIds: Set<string>,
+  matchedIds: Set<string>
+): { nodes: Node[]; edges: Edge[] } {
+  const positions = new Map<string, {x: number; y: number}>();
+  placeNodes(root, 0, 0, positions);
+  const nodes: Node[] = [];
+  const edges: Edge[] = [];
+  function walk(node: any) {
+    const pos = positions.get(node.id) ?? { x: 0, y: 0 };
+    let status = "idle";
+    if (matchedIds.has(node.id)) status = "matched";
+    else if (traversedIds.has(node.id)) status = "visited";
+    nodes.push({
+      id: node.id,
+      type: "domNode",
+      position: pos,
+      data: {
+        tag: node.tag,
+        attrId: node.attributes?.id,
+        attrClass: node.attributes?.class,
+        status,
+      },
+    });
+    if (node.children) {
+      for (const child of node.children) {
+        edges.push({
+          id: `e-${node.id}-${child.id}`,
+          source: node.id,
+          target: child.id,
+          style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+        });
+        walk(child);
+      }
+    }
+  }
+  walk(root);
+  return { nodes, edges };
+}
+
+function buildNodeMap(root: any): Map<string, any> {
+  const map = new Map<string, any>();
+  function walk(n: any) { map.set(n.id, n); n.children?.forEach(walk); }
+  walk(root);
+  return map;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  matched: "#22c55e",
+  visited: "#f59e0b",
+  idle: "#a9b4b9",
 };
 
-const renderCustomNodeElement = ({ nodeDatum, toggleNode }: any) => (
-  <g>
-    <circle r="15" fill="#4D44E3" onClick={toggleNode} style={{ cursor: "pointer" }} />
-    <text fill="#e2e2e9" strokeWidth="1" x="20" dy="5" fontSize="14" style={{ userSelect: 'none' }}>
-      {nodeDatum.name}
-    </text>
-    {nodeDatum.attributes?.id && (
-      <text fill="#8E8E93" x="20" dy="20" fontSize="10" style={{ userSelect: 'none' }}>
-        #{nodeDatum.attributes.id}
-      </text>
-    )}
-  </g>
-);
+function DOMNodeComponent({ data, selected }: NodeProps) {
+  const d = data as { tag: string; attrId?: string; attrClass?: string; status: string };
+  const bg = STATUS_COLORS[d.status] ?? STATUS_COLORS.idle;
+  return (
+    <div style={{
+      background: bg, color: "#fff", borderRadius: 8, padding: "5px 10px",
+      fontSize: 12, fontFamily: "monospace", width: NODE_W, textAlign: "center",
+      boxShadow: selected ? `0 0 0 2px #fff, 0 0 0 4px ${bg}` : "0 2px 6px rgba(0,0,0,0.18)",
+      transition: "box-shadow 0.15s", cursor: "pointer", userSelect: "none",
+    }}>
+      <Handle type="target" position={Position.Top} style={{ background: "transparent", border: "none" }} />
+      <div style={{ fontWeight: 700 }}>&lt;{d.tag}&gt;</div>
+      {d.attrId && <div style={{ fontSize: 10, opacity: 0.85 }}>#{d.attrId}</div>}
+      {d.attrClass && <div style={{ fontSize: 10, opacity: 0.75 }}>.{d.attrClass.split(" ")[0]}</div>}
+      <Handle type="source" position={Position.Bottom} style={{ background: "transparent", border: "none" }} />
+    </div>
+  );
+}
+
+const nodeTypes = { domNode: DOMNodeComponent };
 
 export default function Home() {
   const [inputType, setInputType] = useState<"url" | "html">("url");
@@ -39,20 +120,57 @@ export default function Home() {
   const [url, setUrl] = useState("");
   const [html, setHtml] = useState("");
   const [cssSelector, setCssSelector] = useState("");
-  const [maxResults, setMaxResults] = useState(50);
-
-  // STATE PLACEHOLDER: Untuk menerima data JSON
-  const [metrics, setMetrics] = useState({
-    maxDepth: 0,
-    searchTime: 0,
-    visitedNodes: 0,
-  });
-  
-  const [traversalLog, setTraversalLog] = useState<{tag: string, level: number, status: string, time?: number}[]>([]);
-  const [treeNodes, setTreeNodes] = useState([]); // Array kosong untuk nodes pohon
+  const [maxResults, setMaxResults] = useState(10);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Simulasi tombol start ditekan
+  // Response dari backend
+  const [apiResponse, setApiResponse] = useState<any>(null);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+  if (!apiResponse?.traversalLog) return;
+  
+  if (currentStep < apiResponse.traversalLog.length) {
+    const timer = setTimeout(() => {
+      setCurrentStep((prev) => prev + 1);
+    }, 500); 
+    
+    return () => clearTimeout(timer);
+  }
+}, [apiResponse, currentStep]);
+
+  const traversedIds = useMemo(() => {
+    if (!apiResponse?.traversalLog) return new Set<string>();
+    const currentLog = apiResponse.traversalLog.slice(0, currentStep);
+    return new Set<string>(currentLog.map((s: any) => s.nodeId));
+  }, [apiResponse, currentStep]);
+
+  const matchedIds = useMemo(() => {
+    if (!apiResponse?.traversalLog) return new Set<string>();
+    const currentLog = apiResponse.traversalLog.slice(0, currentStep);
+    return new Set<string>(currentLog.filter((s: any) => s.matched).map((s: any) => s.nodeId));
+  }, [apiResponse, currentStep]);
+
+  const { rfNodes, rfEdges } = useMemo(() => {
+    if (!apiResponse?.domTree) return { rfNodes: [], rfEdges: [] };
+    const { nodes, edges } = buildRFGraph(apiResponse.domTree, traversedIds, matchedIds);
+    return { rfNodes: nodes, rfEdges: edges };
+  }, [apiResponse, traversedIds, matchedIds]);
+
+  const nodeMap = useMemo(() => {
+    if (!apiResponse?.domTree) return new Map<string, any>();
+    return buildNodeMap(apiResponse.domTree);
+  }, [apiResponse]);
+
+  const selectedNode = selectedNodeId ? nodeMap.get(selectedNodeId) : null;
+  const metrics = {
+    maxDepth: apiResponse?.maxDepth ?? 0,
+    searchTime: apiResponse?.executionMs ?? 0,
+    visitedNodes: apiResponse?.nodesVisited ?? 0,
+  };
+  const traversalLog: any[] = apiResponse?.traversalLog ?? [];
+
   const handleStartTraversal = async () => {
     if (inputType === "url" && !url.trim()) {
       alert("Please enter a URL");
@@ -64,9 +182,9 @@ export default function Home() {
     }
 
     setIsProcessing(true);
-    setTraversalLog([]);
-    setTreeNodes([]);
-    setMetrics({ maxDepth: 0, searchTime: 0, visitedNodes: 0 });
+    setApiResponse(null);
+    setSelectedNodeId(null);
+    setCurrentStep(0);
 
     try {
       const response = await fetch("/api/search", {
@@ -85,24 +203,7 @@ export default function Home() {
         alert(`Error: ${data.error || "Unknown error"}`);
         return;
       }
-      
-      setMetrics({
-        maxDepth: data.maxDepth || 0,
-        searchTime: data.executionMs || 0,
-        visitedNodes: data.nodesVisited || 0,
-      });
-      
-      if (data.traversalLog) {
-        setTraversalLog(data.traversalLog.map((log: any) => ({
-          tag: log.tag || log.nodeId || "unknown",
-          level: 0,
-          status: log.matched ? "Matched" : "Visited",
-        })));
-      }
-      
-      if (data.domTree) {
-        setTreeNodes([data.domTree as never]);
-      }
+      setApiResponse(data);
     } catch (error) {
       console.error("Failed to fetch:", error);
       alert("Failed to reach server");
@@ -111,17 +212,27 @@ export default function Home() {
     }
   };
 
+  const handleNodeClick: NodeMouseHandler = useCallback((_event, node) => {
+    setSelectedNodeId(node.id);
+  }, []);
+
+  const handleDownloadLog = () => {
+    if (!traversalLog.length) return;
+    const blob = new Blob([JSON.stringify(traversalLog, null, 2)], { type: "application/json" });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = `traversal-log-${algorithm}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(blobUrl);
+  };
+
   return (
     <div className="h-screen overflow-hidden flex flex-col font-body">
       {/* TopNavBar */}
       <div className="z-50 hidden md:flex justify-between items-center w-full px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/15 shadow-sm">
         <div className="flex items-center gap-8">
           <span className="text-2xl font-bold font-headline tracking-tighter text-on-surface">DOM Explorer</span>
-        </div>
-        <div className="flex gap-6 items-center">
-          <button className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2">
-            Export Tree {/* Nanti ini bakal dipasang event handler buat export data pohon ke bentuk apapun yang bisa (diimplement kalau librarynya ada) */}
-          </button>
         </div>
       </div>
 
@@ -241,7 +352,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Start Button */} {/* ini masih placeholder, nanti bakal dipasang event handler buat mulai traversal dan fetch data ke backend */}
+          {/* Start Button */}
           <div className="mt-auto">
             <button 
               onClick={handleStartTraversal}
@@ -284,32 +395,31 @@ export default function Home() {
 
           {/* Visualization Canvas */}
           <div className="flex-1 relative overflow-hidden mx-6 mb-6 rounded-2xl outline-1 outline-outline-variant/15 bg-grid-dots shadow-sm">
-            <div className="absolute top-4 right-4 bg-surface/80 backdrop-blur-xl p-1 rounded-xl shadow-sm outline-1 outline-outline-variant/15 flex gap-1 z-20">
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container-highest transition-colors text-on-surface-variant">
-                <span className="material-symbols-outlined text-[20px]">zoom_in</span>
-              </button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container-highest transition-colors text-on-surface-variant">
-                <span className="material-symbols-outlined text-[20px]">zoom_out</span>
-              </button>
-            </div>
-
-            {/* Area Kosong untuk Placeholder Tree */} {/* Nanti ini bakal jadi area untuk visualisasi pohon DOM, sementara masih pake placeholder dan blom ada library visualisasinya*/}
-            <div className={`absolute inset-0 ${treeNodes.length === 0 ? "flex items-center justify-center overflow-auto text-on-surface-variant opacity-50" : ""}`}>
-              {treeNodes.length === 0 ? (
+            {/* React Flow DOM Tree Visualization */}
+            <div className={`absolute inset-0 ${rfNodes.length === 0 ? "flex items-center justify-center overflow-auto text-on-surface-variant opacity-50" : ""}`}>
+              {rfNodes.length === 0 ? (
                 <div className="text-sm flex flex-col items-center gap-2">
                   <span className="material-symbols-outlined text-4xl">account_tree</span>
                   <p>Menunggu eksekusi algoritma...</p>
                 </div>
               ) : (
                 <div className="w-full h-full">
-                  <Tree 
-                    data={transformTreeData(treeNodes[0])} 
-                    orientation="vertical"
-                    pathFunc="step"
-                    translate={{ x: 300, y: 50 }}
-                    nodeSize={{ x: 150, y: 80 }}
-                    renderCustomNodeElement={renderCustomNodeElement}
-                  />
+                  <ReactFlowProvider>
+                    <ReactFlow
+                      nodes={rfNodes}
+                      edges={rfEdges}
+                      nodeTypes={nodeTypes}
+                      onNodeClick={handleNodeClick}
+                      fitView
+                      fitViewOptions={{ padding: 0.15 }}
+                      minZoom={0.05}
+                      maxZoom={2}
+                      proOptions={{ hideAttribution: true }}
+                    >
+                      <Controls showInteractive={false} />
+                      <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#a9b4b9" />
+                    </ReactFlow>
+                  </ReactFlowProvider>
                 </div>
               )}
             </div>
@@ -320,33 +430,70 @@ export default function Home() {
         <aside className="w-72 shrink-0 bg-surface h-full flex flex-col border-l border-outline-variant/15">
           <div className="p-6 pb-2 border-b border-outline-variant/15 flex items-center justify-between bg-surface z-10">
             <h3 className="font-headline font-semibold text-lg text-on-surface">Traversal Log</h3>
-            <span className="bg-surface-container-highest text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded text-on-surface-variant">Live</span>
+            <div className="flex items-center gap-2">
+              <span className="bg-surface-container-highest text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded text-on-surface-variant">{traversalLog.length} steps</span>
+              <button
+                onClick={handleDownloadLog}
+                disabled={!traversalLog.length}
+                title="Download traversal log"
+                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-surface-container-highest transition-colors text-on-surface-variant disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <span className="material-symbols-outlined text-[18px]">download</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide bg-surface">
-            {/* Placeholder Log List */} {/* Nanti ini bakal diisi sama log aktivitas traversal yang dikirim dari backend real-time, sementara masih pake data statis buat simulasi */}
+            {/* Traversal log dari backend */}
             {traversalLog.length === 0 ? (
               <div className="text-xs text-on-surface-variant text-center mt-10">Belum ada aktivitas.</div>
             ) : (
-              traversalLog.map((log, index) => (
-                <div key={index} className="bg-surface-container-low rounded-lg p-3 flex items-start gap-3">
-                  <span className="material-symbols-outlined text-outline text-[18px] mt-0.5">check_circle</span>
+              traversalLog.map((log: any, index: number) => (
+                <div
+                  key={index}
+                  onClick={() => setSelectedNodeId(log.nodeId)}
+                  className="bg-surface-container-low rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-surface-container-high transition-colors"
+                  style={{ outline: selectedNodeId === log.nodeId ? "2px solid #4D44E3" : undefined }}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full mt-1.5 shrink-0"
+                    style={{ background: log.matched ? "#22c55e" : "#f59e0b" }}
+                  />
                   <div>
                     <div className="text-sm font-medium text-on-surface flex items-center gap-2">
-                      <span className="font-mono text-xs bg-surface-container-lowest px-1.5 py-0.5 rounded outline-1 outline-outline-variant/15">{log.tag}</span>
+                      <span className="font-mono text-xs bg-surface-container-lowest px-1.5 py-0.5 rounded outline-1 outline-outline-variant/15">&lt;{log.tag}&gt;</span>
                     </div>
-                    <p className="text-xs text-on-surface-variant mt-1">{log.status}</p>
+                    <p className="text-xs mt-1" style={{ color: log.matched ? "#16a34a" : "#b45309" }}>
+                      {log.matched ? "Matched" : "Visited"}
+                    </p>
                   </div>
                 </div>
               ))
             )}
           </div>
 
-          {/* Node Details Placeholder */} {/* Ini gatau bakal diimplement atau engga, gimana nanti soalnya terlihat ribet tapi keren*/}
+          {/* Node Details */}
           <div className="h-48 border-t border-outline-variant/15 bg-surface-container-low p-4 flex flex-col">
             <h4 className="text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-3">Node Details</h4>
-            <div className="bg-surface-container-lowest rounded-xl p-3  outline-1 outline-outline-variant/15 flex-1 overflow-auto text-xs font-mono text-on-surface leading-relaxed text-opacity-50 flex items-center justify-center">
-              Pilih node untuk melihat detail
+            <div className="bg-surface-container-lowest rounded-xl p-3 outline-1 outline-outline-variant/15 flex-1 overflow-auto text-xs font-mono text-on-surface leading-relaxed custom-scrollbar">
+              {selectedNode ? (
+                <div className="space-y-1">
+                  <div><span className="text-outline">tag: </span><span className="text-primary font-bold">&lt;{selectedNode.tag}&gt;</span></div>
+                  <div><span className="text-outline">depth: </span><span>{selectedNode.depth}</span></div>
+                  {selectedNode.attributes && Object.entries(selectedNode.attributes).map(([k, v]: [string, any]) => (
+                    <div key={k}><span className="text-outline">{k}: </span><span>&quot;{v}&quot;</span></div>
+                  ))}
+                  <div><span className="text-outline">children: </span><span>{selectedNode.children?.length ?? 0}</span></div>
+                  <div>
+                    <span className="text-outline">status: </span>
+                    <span style={{ color: matchedIds.has(selectedNode.id) ? "#16a34a" : traversedIds.has(selectedNode.id) ? "#b45309" : "#6b7280" }}>
+                      {matchedIds.has(selectedNode.id) ? "matched" : traversedIds.has(selectedNode.id) ? "visited" : "not traversed"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full text-outline">Pilih node untuk melihat detail</div>
+              )}
             </div>
           </div>
         </aside>
