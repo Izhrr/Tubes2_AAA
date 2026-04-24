@@ -52,6 +52,7 @@ function buildRFGraph(
     let status = "idle";
     if (matchedIds.has(node.id)) status = "matched";
     else if (traversedIds.has(node.id)) status = "visited";
+    
     nodes.push({
       id: node.id,
       type: "domNode",
@@ -60,16 +61,24 @@ function buildRFGraph(
         tag: node.tag,
         attrId: node.attributes?.id,
         attrClass: node.attributes?.class,
+        content: node.attributes?.content,
         status,
       },
     });
+    
     if (node.children) {
       for (const child of node.children) {
+        const isTraversed = traversedIds.has(node.id) && traversedIds.has(child.id);
+        
         edges.push({
           id: `e-${node.id}-${child.id}`,
           source: node.id,
           target: child.id,
-          style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+          animated: isTraversed,
+          style: { 
+            stroke: isTraversed ? "#f59e0b" : "#94a3b8",
+            strokeWidth: isTraversed ? 2.5 : 1.5 
+          },
         });
         walk(child);
       }
@@ -93,19 +102,30 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function DOMNodeComponent({ data, selected }: NodeProps) {
-  const d = data as { tag: string; attrId?: string; attrClass?: string; status: string };
+  const d = data as { tag: string; attrId?: string; attrClass?: string; content?: string; status: string };
   const bg = STATUS_COLORS[d.status] ?? STATUS_COLORS.idle;
+  
   return (
     <div style={{
       background: bg, color: "#fff", borderRadius: 8, padding: "5px 10px",
       fontSize: 12, fontFamily: "monospace", width: NODE_W, textAlign: "center",
       boxShadow: selected ? `0 0 0 2px #fff, 0 0 0 4px ${bg}` : "0 2px 6px rgba(0,0,0,0.18)",
       transition: "box-shadow 0.15s", cursor: "pointer", userSelect: "none",
+      display: "flex", flexDirection: "column", justifyContent: "center", height: "100%"
     }}>
       <Handle type="target" position={Position.Top} style={{ background: "transparent", border: "none" }} />
-      <div style={{ fontWeight: 700 }}>&lt;{d.tag}&gt;</div>
-      {d.attrId && <div style={{ fontSize: 10, opacity: 0.85 }}>#{d.attrId}</div>}
-      {d.attrClass && <div style={{ fontSize: 10, opacity: 0.75 }}>.{d.attrClass.split(" ")[0]}</div>}
+      
+      {d.tag === "#text" ? (
+        <div style={{ fontWeight: 400, fontStyle: "italic", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          &quot;{d.content}&quot;
+        </div>
+      ) : (
+        <>
+          <div style={{ fontWeight: 700 }}>&lt;{d.tag}&gt;</div>
+          {d.attrId && <div style={{ fontSize: 10, opacity: 0.85 }}>#{d.attrId}</div>}
+          {d.attrClass && <div style={{ fontSize: 10, opacity: 0.75 }}>.{d.attrClass.split(" ")[0]}</div>}
+        </>
+      )}
       <Handle type="source" position={Position.Bottom} style={{ background: "transparent", border: "none" }} />
     </div>
   );
@@ -148,29 +168,45 @@ export default function Home() {
   }, [apiResponse, currentStep, isAnimEnabled, animSpeed]);
 
   const traversedIds = useMemo(() => {
-    if (!apiResponse?.traversalLog) return new Set<string>();
+    if (!apiResponse?.traversalLog) {
+      return new Set<string>();
+    }
     const currentLog = apiResponse.traversalLog.slice(0, currentStep);
-    return new Set<string>(currentLog.map((s: any) => s.nodeId));
+    const traversedNodeIds = currentLog.map((step: any) => step.nodeId);
+
+    return new Set<string>(traversedNodeIds);
   }, [apiResponse, currentStep]);
 
   const matchedIds = useMemo(() => {
-    if (!apiResponse?.traversalLog) return new Set<string>();
+    if (!apiResponse?.traversalLog) {
+      return new Set<string>();
+    }
     const currentLog = apiResponse.traversalLog.slice(0, currentStep);
-    return new Set<string>(currentLog.filter((s: any) => s.matched).map((s: any) => s.nodeId));
+    const matchedSteps = currentLog.filter((step: any) => step.matched);
+    const matchedNodeIds = matchedSteps.map((step: any) => step.nodeId);
+
+    return new Set<string>(matchedNodeIds);
   }, [apiResponse, currentStep]);
 
   const { rfNodes, rfEdges } = useMemo(() => {
-    if (!apiResponse?.domTree) return { rfNodes: [], rfEdges: [] };
+    if (!apiResponse?.domTree) {
+      return { rfNodes: [], rfEdges: [] };
+    }
     const { nodes, edges } = buildRFGraph(apiResponse.domTree, traversedIds, matchedIds);
+
     return { rfNodes: nodes, rfEdges: edges };
   }, [apiResponse, traversedIds, matchedIds]);
 
   const nodeMap = useMemo(() => {
-    if (!apiResponse?.domTree) return new Map<string, any>();
+    if (!apiResponse?.domTree) {
+      return new Map<string, any>();
+    }
+
     return buildNodeMap(apiResponse.domTree);
   }, [apiResponse]);
 
   const selectedNode = selectedNodeId ? nodeMap.get(selectedNodeId) : null;
+
   const metrics = {
     maxDepth: apiResponse?.maxDepth ?? 0,
     searchTime: apiResponse?.executionMs ?? 0,
