@@ -10,66 +10,127 @@ import (
 	"backend/internal/model"
 )
 
+// void elements / self-closing tags
+var voidElements = map[string]bool{
+	"area": true, "base": true, "br": true, "col": true,
+	"embed": true, "hr": true, "img": true, "input": true,
+	"link": true, "meta": true, "param": true, "source": true,
+	"track": true, "wbr": true,
+}
+
 func ParseHTML(htmlStr string) (*model.DOMNode, int, int, error) {
-	doc, err := html.Parse(strings.NewReader(htmlStr))
-	if err != nil {
-		return nil, 0, 0, err
+	tokenizer := html.NewTokenizer(strings.NewReader(htmlStr))
+
+	root := &model.DOMNode{
+		ID:         uuid.New().String(),
+		Tag:        "#document",
+		Attributes: map[string]string{},
+		Children:   []*model.DOMNode{},
+		Depth:      -1,
+		Parent:     nil,
 	}
 
+	stack := []*model.DOMNode{root}
 	nodeCount := 0
 	maxDepth := 0
 
-	root := buildTree(doc, nil, 0, &nodeCount, &maxDepth)
+	for {
+		tokenType := tokenizer.Next()
 
-	if root == nil {
-		return nil, 0, 0, errors.New("no valid HTML elements found")
-	}
+		if tokenType == html.ErrorToken {
+			// EOF
+			break
+		}
 
-	return root, nodeCount, maxDepth, nil
-}
+		current := stack[len(stack)-1]
 
-func buildTree(n *html.Node, parent *model.DOMNode, depth int, nodeCount *int, maxDepth *int) *model.DOMNode {
+		switch tokenType {
 
-	// skip non-element
-	if n.Type != html.ElementNode {
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			res := buildTree(c, parent, depth, nodeCount, maxDepth)
-			if res != nil {
-				return res
+		case html.StartTagToken, html.SelfClosingTagToken:
+			name, hasAttr := tokenizer.TagName()
+			tag := string(name)
+
+			depth := current.Depth + 1
+			if depth > maxDepth {
+				maxDepth = depth
 			}
+			nodeCount++
+
+			node := &model.DOMNode{
+				ID:         uuid.New().String(),
+				Tag:        tag,
+				Attributes: map[string]string{},
+				Children:   []*model.DOMNode{},
+				Depth:      depth,
+				Parent:     current,
+			}
+
+			for hasAttr {
+				var key, val []byte
+				key, val, hasAttr = tokenizer.TagAttr()
+				node.Attributes[string(key)] = string(val)
+			}
+
+			current.Children = append(current.Children, node)
+
+			// handle void dan self closing tag
+			if !voidElements[tag] && tokenType != html.SelfClosingTagToken {
+				stack = append(stack, node)
+			}
+
+		case html.EndTagToken:
+			name, _ := tokenizer.TagName()
+			tag := string(name)
+
+			for len(stack) > 1 {
+				top := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				if top.Tag == tag {
+					break
+				}
+			}
+
+		case html.TextToken:
+			text := strings.TrimSpace(string(tokenizer.Text()))
+			if text == "" {
+				continue
+			}
+
+			depth := current.Depth + 1
+			if depth > maxDepth {
+				maxDepth = depth
+			}
+			nodeCount++
+
+			textNode := &model.DOMNode{
+				ID:         uuid.New().String(),
+				Tag:        "#text",
+				Attributes: map[string]string{"content": text},
+				Children:   []*model.DOMNode{},
+				Depth:      depth,
+				Parent:     current,
+			}
+
+			current.Children = append(current.Children, textNode)
 		}
-		return nil
 	}
 
-	id := uuid.New().String()
-
-	if depth > *maxDepth {
-		*maxDepth = depth
-	}
-
-	*nodeCount++
-
-	node := &model.DOMNode{
-		ID:         id,
-		Tag:        n.Data,
-		Attributes: map[string]string{},
-		Children:   []*model.DOMNode{},
-		Depth:      depth,
-		Parent:     parent,
-	}
-
-	// attributes
-	for _, attr := range n.Attr {
-		node.Attributes[attr.Key] = attr.Val
-	}
-
-	// children
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		child := buildTree(c, node, depth+1, nodeCount, maxDepth)
-		if child != nil {
-			node.Children = append(node.Children, child)
+	var htmlRoot *model.DOMNode
+	for _, child := range root.Children {
+		if child.Tag == "html" {
+			htmlRoot = child
+			break
 		}
 	}
 
-	return node
+	if htmlRoot == nil {
+		if len(root.Children) == 0 {
+			return nil, 0, 0, errors.New("no valid HTML elements found")
+		}
+		htmlRoot = root.Children[0]
+	}
+
+	htmlRoot.Parent = nil
+
+	return htmlRoot, nodeCount, maxDepth, nil
 }
