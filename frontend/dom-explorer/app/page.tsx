@@ -211,6 +211,7 @@ export default function Home() {
     maxDepth: apiResponse?.maxDepth ?? 0,
     searchTime: apiResponse?.executionMs ?? 0,
     visitedNodes: apiResponse?.nodesVisited ?? 0,
+    matchCount: apiResponse?.results?.length ?? 0
   };
   const traversalLog: any[] = apiResponse?.traversalLog ?? [];
 
@@ -467,6 +468,14 @@ export default function Home() {
               <div className="flex items-baseline gap-2">
                 <span className="font-headline font-bold text-3xl tracking-tight text-on-surface">{metrics.visitedNodes}</span>
                 <span className="text-sm text-outline">nodes</span>
+              </div>
+            </div>
+            {/* Metric 4: Matches Found */}
+            <div className="flex-1 bg-surface-container-low rounded-xl p-4 flex flex-col justify-between group hover:bg-surface-container-high transition-colors">
+              <span className="text-[11px] uppercase tracking-[0.05em] font-semibold text-on-surface-variant mb-1">Matches Found</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-headline font-bold text-3xl tracking-tight text-on-surface">{metrics.matchCount}</span>
+                <span className="text-sm text-outline">elements</span>
               </div>
             </div>
           </div>
